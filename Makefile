@@ -1,17 +1,22 @@
-PREFIX = .
+MUPDFINC = -I../mupdf/include
+MUPDFLIB = -L../mupdf/build/release -lmupdf -lmupdf-third -lmupdf-pkcs7 -lmupdf-threads
+NANOXINC = -I../microwindows/src/include
+NANOXLIB = -L../microwindows/src/lib -lnano-X
+DRAW = nxdraw.o
+#DRAW = draw.o
 CC = cc
-CFLAGS = -Wall -O2 -I$(PREFIX)/include
-LDFLAGS = -L$(PREFIX)/lib
+CFLAGS = -Wall -O2 $(MUPDFINC) $(NANOXINC)
 
-all: fbpdf fbdjvu
+all: fbpdf
+xall: fbpdf fbdjvu
 %.o: %.c doc.h
 	$(CC) -c $(CFLAGS) $<
 clean:
 	-rm -f *.o fbpdf fbdjvu fbpdf2
 
 # pdf support using mupdf
-fbpdf: fbpdf.o mupdf.o draw.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lmupdf -lmupdf-third -lmupdf-pkcs7 -lmupdf-threads -lm
+fbpdf: fbpdf.o mupdf.o $(DRAW)
+	$(CC) -o $@ $^ $(LDFLAGS) $(MUPDFLIB) $(NANOXLIB) -lm
 
 # djvu support
 fbdjvu: fbpdf.o djvulibre.o draw.o

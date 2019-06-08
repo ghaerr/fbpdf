@@ -8,6 +8,12 @@
 #include <string.h>
 #include "draw.h"
 
+#include <termios.h>
+#include <signal.h>
+
+/* framebuffer device */
+#define FBDEV_PATH	"/dev/fb0"
+
 #define MIN(a, b)	((a) < (b) ? (a) : (b))
 #define MAX(a, b)	((a) > (b) ? (a) : (b))
 #define NLEVELS		(1 << 8)
@@ -16,9 +22,10 @@ static int fd;
 static void *fb;
 static struct fb_var_screeninfo vinfo;
 static struct fb_fix_screeninfo finfo;
-static int bpp;
+static int bytespp;					/* bytes per pixel*/
 static int nr, ng, nb;
 static int rl, rr, gl, gr, bl, br;	/* fb_color() shifts */
+static struct termios termios;
 
 static int fb_len(void)
 {
@@ -67,8 +74,13 @@ void fb_cmap(void)
 
 unsigned fb_mode(void)
 {
-	return (bpp << 16) | (vinfo.red.length << 8) |
+	return (bytespp << 16) | (vinfo.red.length << 8) |
 		(vinfo.green.length << 4) | (vinfo.blue.length);
+}
+
+unsigned fb_val(int r, int g, int b)
+{
+	return ((r >> rr) << rl) | ((g >> gr) << gl) | ((b >> br) << bl);
 }
 
 static void init_colors(void)
@@ -84,7 +96,7 @@ static void init_colors(void)
 	bl = vinfo.blue.offset;
 }
 
-int fb_init(void)
+int fb_init(char *title, int w, int h)
 {
 	fd = open(FBDEV_PATH, O_RDWR);
 	if (fd == -1)
@@ -94,13 +106,17 @@ int fb_init(void)
 	if (ioctl(fd, FBIOGET_FSCREENINFO, &finfo) == -1)
 		goto failed;
 	fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
-	bpp = (vinfo.bits_per_pixel + 7) >> 3;
+	bytespp = (vinfo.bits_per_pixel + 7) >> 3;
 	fb = mmap(NULL, fb_len(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (fb == MAP_FAILED)
 		goto failed;
 	init_colors();
 	fb_cmap_save(1);
 	fb_cmap();
+	if (FBM_BPP(fb_mode()) != sizeof(fbval_t)) {
+		fprintf(stderr, "fbpdf: fbval_t doesn't match fb depth\n");
+		goto failed;
+	}
 	return 0;
 failed:
 	perror("fb_init()");
@@ -132,10 +148,48 @@ void *fb_mem(int r)
 
 void fb_set(int r, int c, void *mem, int len)
 {
-	memcpy(fb_mem(r) + (c + vinfo.xoffset) * bpp, mem, len * bpp);
+	memcpy(fb_mem(r) + (c + vinfo.xoffset) * bytespp, mem, len * bytespp);
 }
 
-unsigned fb_val(int r, int g, int b)
+void fb_update(void)
 {
-	return ((r >> rr) << rl) | ((g >> gr) << gl) | ((b >> br) << bl);
 }
+
+static void sigcont(int sig)
+{
+	term_setup();
+}
+
+void term_setup(void)
+{
+	struct termios newtermios;
+	tcgetattr(0, &termios);
+	newtermios = termios;
+	newtermios.c_lflag &= ~ICANON;
+	newtermios.c_lflag &= ~ECHO;
+	tcsetattr(0, TCSAFLUSH, &newtermios);
+	printf("\x1b[?25l");		/* hide the cursor */
+	printf("\x1b[2J");		/* clear the screen */
+	fflush(stdout);
+	signal(SIGCONT, sigcont);
+}
+
+void term_cleanup(void)
+{
+	tcsetattr(0, 0, &termios);
+	printf("\x1b[?25h\n");		/* show the cursor */
+}
+
+/*
+ * read a key, never waits
+ * returns key, 0 if timeout or nothing available
+ */
+int readkey(int waitms)
+{
+	unsigned char b;
+	int n;
+	n = read(0, &b, 1);
+	if (n <= 0) return 0;
+	return b;
+}
+

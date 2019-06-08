@@ -16,11 +16,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include <ctype.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
 #include <unistd.h>
 #include "draw.h"
 #include "doc.h"
@@ -28,6 +26,7 @@
 #define MIN(a, b)	((a) < (b) ? (a) : (b))
 #define MAX(a, b)	((a) > (b) ? (a) : (b))
 
+#define PROGNAME	"fbpdf"	/* program name*/
 #define PAGESTEPS	8
 #define MAXZOOM		100
 #define MARGIN		1
@@ -41,7 +40,6 @@ static int prows, pcols;	/* current page dimensions */
 static int prow, pcol;		/* page position */
 static int srow, scol;		/* screen position */
 
-static struct termios termios;
 static char filename[256];
 static int mark[128];		/* mark page number */
 static int mark_row[128];	/* mark head position */
@@ -69,6 +67,7 @@ static void draw(void)
 		fb_set(i - srow, 0, rbuf, scols);
 	}
 	free(rbuf);
+	fb_update();
 }
 
 static int loadpage(int p)
@@ -118,14 +117,6 @@ static void jmpmark(int c, int offset)
 	}
 }
 
-static int readkey(void)
-{
-	unsigned char b;
-	if (read(0, &b, 1) <= 0)
-		return -1;
-	return b;
-}
-
 static int getcount(int def)
 {
 	int result = count ? count : def;
@@ -139,30 +130,6 @@ static void printinfo(void)
 	printf("FBPDF:     file:%s  page:%d(%d)  zoom:%d%% \x1b[K\r",
 		filename, num, doc_pages(doc), zoom * 10);
 	fflush(stdout);
-}
-
-static void term_setup(void)
-{
-	struct termios newtermios;
-	tcgetattr(0, &termios);
-	newtermios = termios;
-	newtermios.c_lflag &= ~ICANON;
-	newtermios.c_lflag &= ~ECHO;
-	tcsetattr(0, TCSAFLUSH, &newtermios);
-	printf("\x1b[?25l");		/* hide the cursor */
-	printf("\x1b[2J");		/* clear the screen */
-	fflush(stdout);
-}
-
-static void term_cleanup(void)
-{
-	tcsetattr(0, 0, &termios);
-	printf("\x1b[?25h\n");		/* show the cursor */
-}
-
-static void sigcont(int sig)
-{
-	term_setup();
 }
 
 static int reload(void)
@@ -212,12 +179,11 @@ static void mainloop(void)
 	int hstep = scols / PAGESTEPS;
 	int c;
 	term_setup();
-	signal(SIGCONT, sigcont);
 	loadpage(num);
 	srow = prow;
 	scol = -scols / 2;
 	draw();
-	while ((c = readkey()) != -1) {
+	while ((c = readkey(0)) != -1) {
 		if (c == 'q')
 			break;
 		if (c == 'e' && reload())
@@ -236,7 +202,7 @@ static void mainloop(void)
 			count = 0;
 			break;
 		case 'm':
-			setmark(readkey());
+			setmark(readkey(0));
 			break;
 		case 'd':
 			sleep(getcount(1));
@@ -288,7 +254,7 @@ static void mainloop(void)
 			break;
 		case '`':
 		case '\'':
-			jmpmark(readkey(), c == '`');
+			jmpmark(readkey(0), c == '`');
 			break;
 		case 'j':
 			srow += step * getcount(1);
@@ -357,7 +323,7 @@ int main(int argc, char *argv[])
 {
 	int i = 1;
 	if (argc < 2) {
-		printf(usage);
+		printf("%s", usage);
 		return 1;
 	}
 	strcpy(filename, argv[argc - 1]);
@@ -379,15 +345,11 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-	printinfo();
-	if (fb_init())
+	if (fb_init(PROGNAME, 800, 600))
 		return 1;
 	srows = fb_rows();
 	scols = fb_cols();
-	if (FBM_BPP(fb_mode()) != sizeof(fbval_t))
-		fprintf(stderr, "fbpdf: fbval_t doesn't match fb depth\n");
-	else
-		mainloop();
+	mainloop();
 	fb_free();
 	free(pbuf);
 	if (doc)

@@ -1,0 +1,2 @@
+#./fbpdf neatcc.pdf
+../microwindows/src/bin/nano-X & ./fbpdf neatcc.pdf
