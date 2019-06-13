@@ -345,7 +345,7 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-	if (fb_init(PROGNAME, 800, 600))
+	if (fb_init() || fb_open(PROGNAME, 800, 600, APPFRAME))
 		return 1;
 	srows = fb_rows();
 	scols = fb_cols();

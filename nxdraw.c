@@ -55,27 +55,51 @@ static void init_colors(void)
 	bl = 0;
 }
 
-int fb_init(char *title, int w, int h)
+int fb_init(void)
 {
+	GR_SCREEN_INFO si;
 	if (GrOpen() < 0)
 		return 1;
 
 	bytespp = 4;
 	init_colors();
 
-	if (!w || !h) {
-		GR_SCREEN_INFO si;
-		GrGetScreenInfo(&si);
-		WIDTH = si.cols;
-		HEIGHT = si.rows;
-	} else {
-		WIDTH = w;
-		HEIGHT = h;
-	}
+	/* get width/height for fb_cols/fb_rows before fb_open*/
+	GrGetScreenInfo(&si);
+	WIDTH = si.cols;
+	HEIGHT = si.rows;
 	STRIDE = WIDTH * bytespp;
 
-	wid = GrNewBufferedWindow(GR_WM_PROPS_BUFFER_MMAP|GR_WM_PROPS_BUFFER_BGRA, title, GR_ROOT_WINDOW_ID,
-		0, 0, WIDTH, HEIGHT, 0);
+	return 0;
+}
+
+int fb_open(char *title, int w, int h, int flags)
+{
+	GR_WM_PROPS props;
+
+	/* reset window size from fullscreen if given*/
+	if (w && h) {
+		WIDTH = w;
+		HEIGHT = h;
+		STRIDE = WIDTH * bytespp;
+	}
+
+	switch (flags) {
+	case NOFRAME:
+		props = GR_WM_PROPS_CLOSEBOX;		/* will generate no frame, closebox, or border*/
+		break;
+	case BORDER:
+		props = GR_WM_PROPS_BORDER;
+		break;
+	case APPFRAME:
+		props = GR_WM_PROPS_APPWINDOW;
+		break;
+	default:
+		return 1;
+	}
+	props |= GR_WM_PROPS_BUFFER_MMAP | GR_WM_PROPS_BUFFER_BGRA | GR_WM_PROPS_NORESIZE;
+
+	wid = GrNewBufferedWindow(props, title, GR_ROOT_WINDOW_ID, 0, 0, WIDTH, HEIGHT, 0);
 	fb = GrOpenClientFramebuffer(wid);
 	if (!fb) {
 		GrDestroyWindow(wid);

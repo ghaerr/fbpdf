@@ -1,5 +1,6 @@
 /* main functions */
-int fb_init(char *title, int w, int h);
+int fb_init(void);
+int fb_open(char *title, int w, int h, int flags);
 void fb_free(void);
 unsigned fb_mode(void);
 void *fb_mem(int r);
@@ -9,6 +10,11 @@ void fb_cmap(void);
 void fb_update(void);
 
 typedef unsigned int fbval_t;	/* framebuffer depth */
+
+/* fb_open flags*/
+#define NOFRAME		0
+#define BORDER		1
+#define APPFRAME	2
 
 /* fb_mode() interpretation */
 #define FBM_BPP(m)	(((m) >> 16) & 0x0f)
